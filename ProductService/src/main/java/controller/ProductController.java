@@ -4,6 +4,10 @@ import java.io.IOException;
 import java.util.List;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cloud.client.ServiceInstance;
+import org.springframework.cloud.client.discovery.DiscoveryClient;
+import org.springframework.cloud.client.loadbalancer.LoadBalancerClient;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -33,6 +37,15 @@ public class ProductController {
 	@Autowired
 	private IProductService productService;
 
+	@Autowired
+	private DiscoveryClient discoveryClient;
+
+	@Value("${categoryServiceid}")
+	private String categoryServiceId;
+
+	@Autowired
+	private LoadBalancerClient loadBalancer;
+
 	@RequestMapping("/products")
 	@PreAuthorize("#oauth2.hasScope('read')")
 	public List<Product> products() {
@@ -42,7 +55,7 @@ public class ProductController {
 	@RequestMapping("/categories")
 	public List<Category> categories() throws JsonParseException, JsonMappingException, IOException {
 		RestTemplate restTemplate = new RestTemplate();
-		String categoryResourceUrl = "http://localhost:9999/categoryApi/categories";
+		String categoryResourceUrl = getServiceUrl(categoryServiceId, "/categories");
 		HttpHeaders headers = new HttpHeaders();
 		headers.setContentType(MediaType.APPLICATION_JSON);
 		headers.set("Authorization", "Bearer " + getToken());
@@ -52,7 +65,9 @@ public class ProductController {
 				String.class);
 		ObjectMapper mapper = new ObjectMapper();
 
-        List<Category> categories = mapper.readValue(response.getBody().toString(), new TypeReference<List<Category>>() {});
+		List<Category> categories = mapper.readValue(response.getBody().toString(),
+				new TypeReference<List<Category>>() {
+				});
 
 		return categories;
 	}
@@ -64,6 +79,15 @@ public class ProductController {
 			token = ((OAuth2AuthenticationDetails) authentication.getDetails()).getTokenValue();
 		}
 		return token;
+	}
+
+	public String getServiceUrl(String serviceId, String path) {
+		ServiceInstance serviceInstance = loadBalancer.choose(serviceId);
+		if (serviceInstance != null) {
+			return new StringBuilder().append(serviceInstance.getUri()).append(path).toString();
+		}
+
+		return null;
 	}
 
 }
